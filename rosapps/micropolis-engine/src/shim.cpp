@@ -297,8 +297,10 @@ void mp_overlay(void *c, int kind, short *out)
             case 5: v = m.pollutionDensityMap.worldGet(x, y); break;
             case 6: v = m.trafficDensityMap.worldGet(x, y); break;
             case 7: {
+                /* the power scan's own answer for each square: PWRBIT is
+                   kept up to date only on a zone's centre */
                 MapValue t = m.map[x][y];
-                v = (t & CONDBIT) ? ((t & PWRBIT) ? 1 : 2) : 0;
+                v = (t & CONDBIT) ? (m.powerGridMap.worldGet(x, y) ? 1 : 2) : 0;
                 break;
             }
             case 8: v = m.fireStationEffectMap.worldGet(x, y); break;

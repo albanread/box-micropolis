@@ -70,7 +70,7 @@ pub const EV_SOUND: c_int = 8;
 pub const PAGES: [&str; 6] = ["City", "Budget", "Evaluation", "Graphs", "Map", "Options"];
 const P_CITY: usize = 0;
 const P_BUDGET: usize = 1;
-const P_EVAL: usize = 2;
+pub const P_EVAL: usize = 2;
 const P_GRAPHS: usize = 3;
 const P_MAP: usize = 4;
 const P_OPTIONS: usize = 5;
@@ -158,6 +158,7 @@ pub struct Ui {
     pub sounds: Option<PathBuf>,
     pub last_sound: Instant,
     pub classes: Vec<u32>,
+    pub result: Option<(c_int, bool)>, // a scenario's end: which, and whether it was won
     pub room: i32,                  // the pane's height on the screen, OS units (0: not known)
 }
 
@@ -207,6 +208,7 @@ impl Ui {
             sounds,
             last_sound: Instant::now(),
             classes,
+            result: None,
             room: 0,
         }
     }
@@ -255,7 +257,7 @@ impl Engine {
         b
     }
 
-    fn clock(&self) -> ScenarioClock {
+    pub fn clock(&self) -> ScenarioClock {
         let mut c = ScenarioClock::default();
         unsafe { mp_scenario_clock(self.city, &mut c) };
         c
@@ -312,7 +314,7 @@ impl Engine {
             self.set_speed(0);
         }
         self.ui.page = P_BUDGET;
-        self.news_add("The budget is due: set it, then Continue.", None);
+        self.news_add(BUDGET_DUE, None);
     }
 
     /// a sound by the engine's name ("HonkHonkMed") or ours ("road")
@@ -571,7 +573,10 @@ impl Engine {
             if c.score_wait > 0 {
                 rows.push(format!("Time left:{} y {} m", c.score_wait / 48, (c.score_wait % 48) / 4));
             } else {
-                rows.push("Time left:the time is up".into());
+                match self.ui.result {
+                    Some((sc, won)) if sc == c.scenario => rows.push(format!("Result:{}", if won { "Won" } else { "Lost" })),
+                    _ => rows.push("Time left:the time is up".into()),
+                }
             }
         }
     }
@@ -619,6 +624,7 @@ impl Engine {
             if let Some(sp) = self.ui.budget_wait.take() {
                 self.set_speed(sp);
             }
+            self.ui.news.retain(|(t, _)| t != BUDGET_DUE);
             self.ui.page = P_CITY;
         } else if let Some(v) = arg(rest, "Tax rate") {
             if let Ok(t) = v.trim_end_matches('%').parse::<c_int>() {
@@ -639,6 +645,7 @@ impl Engine {
         } else if let Some(v) = arg(rest, "Speed") {
             if let Some(i) = SPEEDS.iter().position(|x| *x == v) {
                 self.ui.budget_wait = None;
+                self.ui.news.retain(|(t, _)| t != BUDGET_DUE);
                 self.set_speed(i);
             }
         } else if let Some(v) = arg(rest, "Level") {
@@ -706,9 +713,12 @@ impl Engine {
             self.ui.overlay_on_city = !self.ui.overlay_on_city;
             self.ui.ovl_due = Instant::now();
         } else if let Some(k) = rest.split_once(". ").and_then(|(n, _)| n.parse::<usize>().ok()) {
-            // a news item: the view goes to where it happened
-            if let Some((_, Some((x, y)))) = self.ui.news.get(k.wrapping_sub(1)).cloned() {
-                self.go_to(x, y);
+            // a news item: the view goes to where it happened; the
+            // budget's opens the Budget page, where Continue is
+            match self.ui.news.get(k.wrapping_sub(1)).cloned() {
+                Some((_, Some((x, y)))) => self.go_to(x, y),
+                Some((t, None)) if t == BUDGET_DUE => self.ui.page = P_BUDGET,
+                _ => {}
             }
         }
         self.panes();
@@ -906,6 +916,9 @@ fn pane_height(rows: &[String]) -> i32 {
     }
     y
 }
+
+/// the news while the game waits for the year's budget, gone once it is set
+const BUDGET_DUE: &str = "The budget is due: set it, then Continue.";
 
 fn short(t: &str, n: usize) -> String {
     let t = t.replace('|', " ");

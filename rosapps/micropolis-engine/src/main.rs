@@ -655,14 +655,37 @@ impl Engine {
         self.news = text.to_string();
     }
 
+    /// a message's words.  The engine's numbers are lines of stri.301 up to
+    /// 44; from there its list leaves out three lines the file still has
+    /// (the end of the demo, no sound server, no licence), and the
+    /// scenario's result has no line at all.
+    fn message_text(&mut self, n: usize) -> Option<String> {
+        const WON: usize = 47;
+        const LOST: usize = 48;
+        match n {
+            1..=44 => self.messages.get(n - 1).cloned(),
+            45 | 46 => self.messages.get(n + 2).cloned(),
+            WON | LOST => {
+                let c = self.clock();
+                self.ui.result = Some((c.scenario, n == WON));
+                self.ui.page = game::P_EVAL; // where the result is shown
+                let name = game::SCENARIO_NAMES.get((c.scenario as usize).wrapping_sub(1)).copied().unwrap_or("the scenario");
+                Some(if n == WON {
+                    format!("You have won {name}: the city met its goal.")
+                } else {
+                    format!("You have lost {name}: the city missed its goal.")
+                })
+            }
+            _ => None,
+        }
+    }
+
     fn events(&mut self) {
         let mut ev = Event::default();
         while unsafe { mp_next_event(self.city, &mut ev) } != 0 {
             match ev.kind {
                 EV_MESSAGE => {
-                    let i = ev.a.unsigned_abs() as usize;
-                    if i >= 1 && i <= self.messages.len() {
-                        let m = self.messages[i - 1].clone();
+                    if let Some(m) = self.message_text(ev.a.unsigned_abs() as usize) {
                         self.set_news(&m);
                         let at = if ev.b >= 0 && ev.c >= 0 { Some((ev.b, ev.c)) } else { None };
                         self.news_add(&m, at);
