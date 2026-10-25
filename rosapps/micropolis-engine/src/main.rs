@@ -1354,6 +1354,11 @@ fn main() {
                         e.pick(&name, fx, fy);
                     }
                     "hover" => e.hover_tool(rest.trim()),
+                    // the properties pane's height on the screen: its rows are cut to it
+                    "room" if !nums.is_empty() => {
+                        e.ui.room = at(0) as i32;
+                        e.panes();
+                    }
                     // where the pane's pictures are written, and their names' start
                     "scrap" => {
                         let (p, n) = rest.trim().split_once(' ').unwrap_or((rest.trim(), "t"));

@@ -158,6 +158,7 @@ pub struct Ui {
     pub sounds: Option<PathBuf>,
     pub last_sound: Instant,
     pub classes: Vec<u32>,
+    pub room: i32,                  // the pane's height on the screen, OS units (0: not known)
 }
 
 impl Ui {
@@ -206,6 +207,7 @@ impl Ui {
             sounds,
             last_sound: Instant::now(),
             classes,
+            room: 0,
         }
     }
 }
@@ -360,6 +362,7 @@ impl Engine {
             P_OPTIONS => self.option_rows(&s, &mut rows),
             _ => self.city_rows(&s, &mut rows),
         }
+        fit(&mut rows, self.ui.room);
         let line = rows.join("|");
         if line != self.told_props {
             self.told_props = line.clone();
@@ -464,25 +467,27 @@ impl Engine {
         }
         rows.push("#City".into());
         rows.push(format!("City name={}", self.city_name().replace('|', " ")));
-        rows.push(format!("Population:{}", count(s.pop as i64)));
-        rows.push(format!("Funds:{}", money(s.funds as i64)));
-        rows.push(format!("Score:{}", s.score));
-        rows.push(format!("Class:{}", CLASSES.get(s.city_class as usize).copied().unwrap_or("")));
-        rows.push("#Demand".into());
+        // what may go when the pane is short, the higher first (fit): the
+        // older news, what the status bar shows too, Speed (on Options)
+        rows.push(opt(8, format!("Population:{}", count(s.pop as i64))));
+        rows.push(opt(8, format!("Funds:{}", money(s.funds as i64))));
+        rows.push(opt(8, format!("Score:{}", s.score)));
+        rows.push(opt(4, format!("Class:{}", CLASSES.get(s.city_class as usize).copied().unwrap_or(""))));
+        rows.push(opt(6, "#Demand".into()));
         match self.pic("demand", 210, 60) {
-            Some(p) => rows.push(p),
+            Some(p) => rows.push(opt(6, p)),
             None => {
                 let demand = |d: f32| if d > 0.5 { "Strong" } else if d > 0.1 { "Some" } else if d < -0.5 { "Falling" } else if d < -0.1 { "Weak" } else { "Steady" };
-                rows.push(format!("Residential:{}", demand(s.res_demand)));
-                rows.push(format!("Commercial:{}", demand(s.com_demand)));
-                rows.push(format!("Industrial:{}", demand(s.ind_demand)));
+                rows.push(opt(6, format!("Residential:{}", demand(s.res_demand))));
+                rows.push(opt(6, format!("Commercial:{}", demand(s.com_demand))));
+                rows.push(opt(6, format!("Industrial:{}", demand(s.ind_demand))));
             }
         }
-        rows.push(format!("Speed?{}?{}", SPEEDS[self.speed], SPEEDS.join(",")));
+        rows.push(opt(7, format!("Speed?{}?{}", SPEEDS[self.speed], SPEEDS.join(","))));
         if !self.ui.news.is_empty() {
-            rows.push("#News".into());
+            rows.push(opt(5, "#News".into()));
             for (i, (t, _)) in self.ui.news.iter().enumerate() {
-                rows.push(format!("*{}. {}", i + 1, short(t, 34)));
+                rows.push(opt(if i == 0 { 5 } else { 9 }, format!("*{}. {}", i + 1, short(t, 34))));
             }
         }
     }
@@ -514,7 +519,7 @@ impl Engine {
         }
         rows.push("#Income".into());
         rows.push(format!("Tax rate?{}%?{}", s.tax, (0..=20).map(|t| format!("{t}%")).collect::<Vec<_>>().join(",")));
-        rows.push(format!("Taxes collected:{}", money(b.tax_fund as i64)));
+        rows.push(opt(8, format!("Taxes collected:{}", money(b.tax_fund as i64))));
         rows.push("#Spending".into());
         rows.push(format!("Roads?{}?{fund_menu}", pct(s.road_percent)));
         rows.push(format!("Road cost:{} of {}", money(b.road_spend as i64), money(b.road_fund as i64)));
@@ -524,7 +529,7 @@ impl Engine {
         rows.push(format!("Police cost:{} of {}", money(b.police_spend as i64), money(b.police_fund as i64)));
         rows.push("#Cash".into());
         rows.push(format!("Cash flow:{}", signed(b.cash_flow as i64, money)));
-        rows.push(format!("Previous funds:{}", money((b.funds - b.cash_flow) as i64)));
+        rows.push(opt(9, format!("Previous funds:{}", money((b.funds - b.cash_flow) as i64))));
         rows.push(format!("Current funds:{}", money(b.funds as i64)));
         rows.push(format!("Auto budget!{}", if s.auto_budget != 0 { "on" } else { "off" }));
     }
@@ -546,10 +551,10 @@ impl Engine {
         }
         rows.push("#Statistics".into());
         rows.push(format!("Population:{}", count(e.pop as i64)));
-        rows.push(format!("Migration:{}", signed(e.pop_delta as i64, count)));
-        rows.push(format!("Worth:{}", money(e.assessed as i64)));
-        rows.push(format!("Category:{}", CLASSES.get(e.city_class as usize).copied().unwrap_or("")));
-        rows.push(format!("Game level:{}", LEVELS.get(s.level as usize).copied().unwrap_or("")));
+        rows.push(opt(7, format!("Migration:{}", signed(e.pop_delta as i64, count))));
+        rows.push(opt(8, format!("Worth:{}", money(e.assessed as i64))));
+        rows.push(opt(8, format!("Category:{}", CLASSES.get(e.city_class as usize).copied().unwrap_or(""))));
+        rows.push(opt(9, format!("Game level:{}", LEVELS.get(s.level as usize).copied().unwrap_or(""))));
         rows.push(format!("Score:{} ({})", e.score, signed(e.score_delta as i64, |v| v.to_string())));
         // the scenario's goal, and how long is left to reach it
         let c = self.clock();
@@ -586,7 +591,7 @@ impl Engine {
         rows.push("#The whole city".into());
         if let Some(p) = self.pic("map", 210, 175) {
             rows.push(p);
-            rows.push("Note:Click to go there".into());
+            rows.push(opt(8, "Note:Click to go there".into()));
         }
         rows.push(format!("Overlay?{}?{}", OVERLAYS[self.ui.overlay], OVERLAYS.join(",")));
         if self.ui.overlay > 0 {
@@ -597,7 +602,7 @@ impl Engine {
                 8 | 9 => "Bluer is better",
                 _ => "Green low, red high",
             };
-            rows.push(format!("Colours:{legend}"));
+            rows.push(opt(9, format!("Colours:{legend}")));
         }
     }
 
@@ -823,6 +828,85 @@ impl Engine {
 pub const SCENARIO_NAMES: [&str; 8] =
     ["Dullsville 1900", "San Francisco 1906", "Hamburg 1944", "Bern 1965", "Tokyo 1957", "Detroit 1972", "Boston 2010", "Rio de Janeiro 2047"];
 
+/// a row the pane may leave out when it is short of room: priority 1..9,
+/// the higher going first (fit)
+fn opt(p: u8, row: String) -> String {
+    format!("\u{1}{}{row}", (b'0' + p) as char)
+}
+
+/// The pane's rows cut to its height on the screen: the properties pane has
+/// no scroll bar, so what is below its bottom cannot be seen.  The rows
+/// marked by opt() go, the highest priority first and the last of a
+/// priority first (the oldest news), until the rest fit; then the marks
+/// are taken off.
+fn fit(rows: &mut Vec<String>, room: i32) {
+    let prio = |r: &str| if r.as_bytes().first() == Some(&1) { r.as_bytes()[1] - b'0' } else { 0 };
+    let plain = |r: &String| if prio(r) > 0 { r[2..].to_string() } else { r.clone() };
+    while room > 0 && pane_height(&rows.iter().map(plain).collect::<Vec<_>>()) > room {
+        let Some(top) = rows.iter().map(|r| prio(r)).max().filter(|&p| p > 0) else { break };
+        let i = rows.iter().rposition(|r| prio(r) == top).unwrap();
+        rows.remove(i);
+    }
+    for r in rows.iter_mut() {
+        if prio(r) > 0 {
+            *r = r[2..].to_string();
+        }
+    }
+}
+
+/// How tall the shell makes the pane for these rows, in OS units: its own
+/// layout (rosapp.mojo show_props) with buttons' widths estimated, a little
+/// wide, and two OS units a pixel
+fn pane_height(rows: &[String]) -> i32 {
+    const RIGHT: i32 = 500 - 12;
+    let (mut y, mut bx) = (12, 12);
+    for (k, f) in rows.iter().enumerate() {
+        if f.is_empty() {
+            continue;
+        }
+        if let Some(name) = f.strip_prefix('*') {
+            let wide = 40 + 16 * name.trim_start_matches('=').chars().count() as i32;
+            if bx > 12 && bx + wide > RIGHT {
+                bx = 12;
+                y += 56;
+            }
+            bx += wide + 8;
+            continue;
+        }
+        if let Some(rest) = f.strip_prefix('^') {
+            if bx > 12 && !(k > 0 && rows[k - 1].starts_with('^')) {
+                bx = 12;
+                y += 56;
+            }
+            let (pw, ph) = rest
+                .split_once('@')
+                .and_then(|(_, wh)| wh.split_once('x'))
+                .and_then(|(w, h)| Some((w.parse::<i32>().ok()?, h.parse::<i32>().ok()?)))
+                .unwrap_or((56, 80));
+            let (bw, bh) = (pw * 2 + 12, ph * 2 + 12);
+            if bx > 12 && bx + bw > RIGHT {
+                bx = 12;
+                y += bh + 8;
+            }
+            bx += bw + 8;
+            if !rows.get(k + 1).is_some_and(|n| n.starts_with('^')) {
+                bx = 12;
+                y += bh + 8;
+            }
+            continue;
+        }
+        if bx > 12 {
+            bx = 12;
+            y += 56;
+        }
+        y += if f.starts_with('#') { 60 } else { 52 };
+    }
+    if bx > 12 {
+        y += 56;
+    }
+    y
+}
+
 fn short(t: &str, n: usize) -> String {
     let t = t.replace('|', " ");
     if t.chars().count() <= n {
@@ -979,4 +1063,48 @@ fn sprite_file(sprites: &[(String, u32, u32, Vec<u8>)]) -> Vec<u8> {
         }
     }
     f
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn city(news: usize) -> Vec<String> {
+        let mut r: Vec<String> = ["*=City", "*Budget", "*Evaluation", "*Graphs", "*Map", "*Options", "#Query", "Note:Click a square", "#City", "City name=New_city"]
+            .iter().map(|s| s.to_string()).collect();
+        for s in ["Population:0", "Funds:$20,000", "Score:712"] {
+            r.push(opt(8, s.into()));
+        }
+        r.push(opt(4, "Class:Village".into()));
+        r.push(opt(6, "#Demand".into()));
+        r.push(opt(6, "^t1_demand@210x60".into()));
+        r.push(opt(7, "Speed?Medium?Slow,Medium".into()));
+        r.push(opt(5, "#News".into()));
+        for i in 0..news {
+            r.push(opt(if i == 0 { 5 } else { 9 }, format!("*{}. More commercial zones needed.", i + 1)));
+        }
+        r
+    }
+
+    // the City page measured on the screen: two news items end 964 OS units down
+    #[test]
+    fn height_as_the_shell_lays_it_out() {
+        let mut r = city(2);
+        fit(&mut r, 0);
+        let h = pane_height(&r);
+        assert!((964..=1000).contains(&h), "{h}");
+    }
+
+    #[test]
+    fn short_pane_loses_old_news_first() {
+        let mut r = city(6);
+        fit(&mut r, 1000);
+        assert!(pane_height(&r) <= 1000);
+        assert!(r.iter().any(|x| x.starts_with("*1. ")) && !r.iter().any(|x| x.starts_with("*3. ")), "{r:?}");
+        assert!(r.iter().any(|x| x == "Population:0"));
+        let mut r = city(6);
+        fit(&mut r, 700);
+        assert!(pane_height(&r) <= 700, "{r:?}");
+        assert!(r.iter().any(|x| x == "City name=New_city"));
+    }
 }
