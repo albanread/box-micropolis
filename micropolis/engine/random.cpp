@@ -164,6 +164,10 @@ short Micropolis::getERandom(short limit)
 /** Initialize the random number generator with a 'random' seed. */
 void Micropolis::randomlySeedRandom()
 {
+    if (fixedRandomSeed >= 0) {
+        seedRandom(fixedRandomSeed);
+        return;
+    }
     struct timeval time;
     gettimeofday(&time, NULL);
     seedRandom(time.tv_usec ^ time.tv_sec);
@@ -177,6 +181,15 @@ void Micropolis::randomlySeedRandom()
 void Micropolis::seedRandom(int seed)
 {
     nextRandom = seed;
+}
+
+
+void Micropolis::setFixedRandomSeed(int seed)
+{
+    fixedRandomSeed = seed;
+    if (seed >= 0) {
+        seedRandom(seed);
+    }
 }
 
 

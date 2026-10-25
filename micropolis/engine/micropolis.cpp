@@ -128,7 +128,7 @@ void Micropolis::setCallback(Callback *callback0, emscripten::val callbackVal0)
 /** Initialize simulator variables to a sane default. */
 void Micropolis::init()
 {
-    printf("init");
+    //printf("init");  // BOX: stdout is the program's
     
     ////////////////////////////////////////////////////////////////////////
     // allocate.cpp
@@ -470,6 +470,7 @@ void Micropolis::init()
 
     // UQuad nextRandom;
     nextRandom = 1;
+    fixedRandomSeed = -1;
 
 
     ////////////////////////////////////////////////////////////////////////

@@ -1,0 +1,10 @@
+#!/bin/sh
+# zig 0.15 as a C++ compiler for x86_64 musl, for !Micropolis's engine (the
+# Micropolis simulation, C++): as cc-x86_64, with zig's libc++ headers.  The
+# engine is built without exceptions or RTTI and needs no libc++ library
+# (micropolis-engine/src/cxxrt.cpp).  ZIG names zig, else ~/zig015.
+for a do
+  shift
+  case "$a" in --target=*) ;; *) set -- "$@" "$a" ;; esac
+done
+exec "${ZIG:-$HOME/zig015/zig}" c++ -target x86_64-linux-musl -fno-sanitize=all "$@"

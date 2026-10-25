@@ -1,0 +1,12 @@
+# Shared crop rectangles, in tiles: CITY x0 y0 w h  # what it shows
+# Cities: ../content/cities/<CITY>.cty
+# Render: render_city.py <cities>/<CITY>.cty ATLAS.png TILE_PX OUT.png x0 y0 w h
+scenario_detroit 80 38 24 16  # coast: river shore, seaport, stadium, road bridge, residential/commercial edge
+scenario_detroit 31 44 24 16  # dense downtown: high-density commercial + residential, police, roads with traffic
+scenario_detroit 30 62 24 16  # industry+power+rail: coal plant, rail bridge, power-line bridge, industrial zones, coast
+scenario_tokyo 10 0 24 16  # industry+power: row of coal plants with chimney smoke, airport edge, rail
+scenario_tokyo 34 42 24 16  # coast: seaport, river edges, road and power bridges, islands with woods
+scenario_tokyo 65 42 24 16  # dense downtown: commercial/residential grid, rail/road crossings
+scenario_rio_de_janeiro 92 30 24 16  # coast + transport: rail bridge, road bridge, airport, seaport edge
+scenario_rio_de_janeiro 14 44 24 16  # industry+power: coal plants, seaport, rail bridge, level crossings
+scenario_rio_de_janeiro 38 4 24 16  # rail+roads downtown: curved rail, stadium, mixed zones, woods

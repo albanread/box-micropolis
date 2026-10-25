@@ -1,0 +1,19 @@
+[package]
+name = "rosapps-micropolis"
+version = "0.1.0"
+edition = "2021"
+description = "!Micropolis's engine (ROSAPPS): the Micropolis city simulation (EA's 2008 GPL release of the original SimCity), drawn into the broker's sprite"
+license = "GPL-3.0-or-later"
+publish = false
+
+[dependencies]
+libc = "0.2"
+png = "0.17"
+
+[build-dependencies]
+cc = "1"
+
+[profile.release]
+opt-level = 3
+panic = "abort"
+strip = true

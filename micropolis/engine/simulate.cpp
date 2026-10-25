@@ -610,7 +610,7 @@ void Micropolis::setValves()
 
     normalizedResPop = (float)resPop / (float)resPopDenom;
     totalPopLast = totalPop;
-    totalPop = (short)(normalizedResPop + comPop + indPop);
+    totalPop = (short)(int)(normalizedResPop + comPop + indPop);   // BOX: defined on every host
 
     if (resPop > 0) {
         employment = (comHist[1] + indHist[1]) / normalizedResPop;

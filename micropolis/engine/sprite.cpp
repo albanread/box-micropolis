@@ -111,7 +111,7 @@ SimSprite *Micropolis::newSprite(const std::string &name, int type, int x, int y
         sprite = freeSprites;
         freeSprites = sprite->next;
     } else {
-        sprite = (SimSprite *)newPtr(sizeof (SimSprite));
+        sprite = new SimSprite();     // BOX: it holds a std::string
     }
 
     sprite->name = name;

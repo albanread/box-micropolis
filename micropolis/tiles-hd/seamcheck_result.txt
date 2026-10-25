@@ -1,0 +1,28 @@
+coast|coast      pairs   82  mean  3.00  max  6.01
+land|power       pairs    8  mean  2.18  max  2.22
+land|rail        pairs    8  mean  2.18  max  2.22
+land|road        pairs    8  mean  2.18  max  2.22
+power|land       pairs    8  mean  2.18  max  2.22
+power|power      pairs  130  mean  2.15  max  2.22
+rail|land        pairs    8  mean  2.18  max  2.22
+rail|rail        pairs  130  mean  5.86  max  9.84
+road|land        pairs    8  mean  2.18  max  2.22
+road|road        pairs  130  mean  1.86  max  2.30
+tree|tree        pairs   82  mean 11.42  max 18.90
+worst: [(np.float64(18.9), 37, 37, 'E'), (np.float64(18.9), 37, 31, 'E'), (np.float64(18.9), 37, 23, 'E'), (np.float64(18.9), 35, 37, 'E'), (np.float64(18.9), 35, 31, 'E'), (np.float64(18.9), 35, 23, 'E'), (np.float64(18.9), 27, 37, 'E'), (np.float64(18.9), 27, 31, 'E')]
+reference (adjacent columns inside dirt tile): 2.17
+
+-- building outer edges vs plain ground (0 = identical to dirt tile 0) --
+blocks 57, worst outer edge 1.87; blocks whose outer edge departs from plain ground by > 6: none
+internal block seams: 792 edges; step across the cell edge / largest step beside it: worst 18.40 ((585, 590, 'S')), mean 0.79
+
+-- animation frames vs their static cell (edge |diff|, 0 = identical) --
+frames 84, worst [(np.float64(0.54), 923, 748), (np.float64(0.54), 920, 748), (np.float64(0.54), 921, 748), (np.float64(0.53), 922, 748), (np.float64(0.52), 919, 747), (np.float64(0.51), 917, 747)]
+in-step animated pairs: 40 frame edges, worst ratio to in-tile texture 1.27
+
+-- woods variants: edge |diff| minus that of base 37 in the same place (0 = as seamless as 37) --
+pairs 72, max excess 2.865
+
+-- blob coast on 30 random 26x26 maps --
+water|water edges 7574 mean 2.80 max 6.01;  water|land edges 12509 mean 2.18 max 2.22
+reference: inside water tile 2 5.87, inside dirt 2.38, inside woods 37 14.74

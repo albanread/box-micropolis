@@ -82,9 +82,13 @@ typedef unsigned char Byte;
 
 typedef Byte *Ptr;
 
-typedef long Quad;
+#include <stdint.h>
 
-typedef unsigned long UQuad;
+/* BOX: 32 bits on every host, as on the original Unix and upstream's wasm32
+ * build, so a 64-bit host simulates exactly as a 32-bit one */
+typedef int32_t Quad;
+
+typedef uint32_t UQuad;
 
 
 #endif

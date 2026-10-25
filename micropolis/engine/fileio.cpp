@@ -111,17 +111,6 @@
  */
 #define SWAP_SHORTS(buf, len)        swap_shorts(buf, len)
 
-/**
- * Swap the 16-bit halves of 32-bit values stored inside short arrays.
- *
- * Some miscHist fields are 32-bit values packed as two big-endian 16-bit
- * words. After SWAP_SHORTS has made each word host-endian on little-endian
- * targets, the pair still has big-endian word order in memory. HALF_SWAP_LONGS
- * changes that word order so a cast to Quad/long yields the intended number.
- * @param buf Array with longs.
- * @param len Number of long values in the array.
- */
-#define HALF_SWAP_LONGS(buf, len)    half_swap_longs(buf, len)
 
 /**
  * Swap upper and lower byte of all shorts in the array.
@@ -145,20 +134,6 @@ static void swap_shorts(short *buf, int len)
  * @param buf Array with longs.
  * @param len Number of long values in the array.
  */
-static void half_swap_longs(long *buf, int len)
-{
-    int i;
-
-    /* Flip 16-bit words in each 32-bit value. The bytes inside each word have
-       already been handled by SWAP_SHORTS. */
-    for (i = 0; i < len; i++) {
-        long l = *buf;
-        *buf =
-            ((l & 0x0000ffff) << 16) |
-            ((l & 0xffff0000) >> 16);
-        buf++;
-    }
-}
 
 
 #else
@@ -181,10 +156,27 @@ static void half_swap_longs(long *buf, int len)
  * @note This version does not change anything since the data is already in host
  *       order after read, and already in file order before write.
  */
-#define HALF_SWAP_LONGS(buf, len)
 
 
 #endif
+
+/**
+ * BOX: a 32-bit field of the city file, stored as two big-endian 16-bit
+ * words, the high one first.  Once load_short has made each word host
+ * order, the value is put together arithmetically: no unaligned or
+ * 8-byte access (RISC OS 5 faults on the first, and a 64-bit long wrote
+ * over the next field), and the same on either byte order.
+ */
+static Quad get_long(const short *w)
+{
+    return (Quad)(((UQuad)(unsigned short)w[0] << 16) | (unsigned short)w[1]);
+}
+
+static void put_long(short *w, Quad v)
+{
+    w[0] = (short)((UQuad)v >> 16);
+    w[1] = (short)((UQuad)v & 0xffff);
+}
 
 /**
  * Load an array of short values from file to memory.
@@ -309,7 +301,6 @@ bool Micropolis::loadFileData(const std::string &filename)
 bool Micropolis::loadFile(const std::string &filename)
 {
     //printf("loadFile: mapBase: %p\n", mapBase);
-    long n;
 
     if (!loadFileData(filename)) {
         return false;
@@ -318,21 +309,16 @@ bool Micropolis::loadFile(const std::string &filename)
     /*
      * 32-bit miscHist fields are stored as pairs of big-endian 16-bit words in
      * the file. loadFileData has already converted each 16-bit word to host byte
-     * order, so HALF_SWAP_LONGS fixes the remaining word order before reading the
-     * pair as a Quad.
+     * order, and get_long puts each pair together.
      *
      * This applies to funds (50/51), cityTime (8/9), and the fixed-point funding
      * percentages (58/59, 60/61, 62/63). The funding values are not IEEE floats:
      * they are int(percent * 65536).
      */
 
-    n = *(Quad *)(miscHist + 50);
-    HALF_SWAP_LONGS(&n, 1);
-    setFunds(n);
+    setFunds(get_long(miscHist + 50));
 
-    n = *(Quad *)(miscHist + 8);
-    HALF_SWAP_LONGS(&n, 1);
-    cityTime = n;
+    cityTime = get_long(miscHist + 8);
 
     setAutoBulldoze(miscHist[52] != 0);   // flag for autoBulldoze
     setAutoBudget(miscHist[53] != 0);     // flag for autoBudget
@@ -344,27 +330,12 @@ bool Micropolis::loadFile(const std::string &filename)
     changeCensus();
     mustUpdateOptions = true;
 
-    n = *(Quad *)(miscHist + 58);
-    HALF_SWAP_LONGS(&n, 1);
-    policePercent = ((float)n) / ((float)65536);
-
-    n = *(Quad *)(miscHist + 60);
-    HALF_SWAP_LONGS(&n, 1);
-    firePercent = (float)n / (float)65536.0;
-
-    n = *(Quad *)(miscHist + 62);
-    HALF_SWAP_LONGS(&n, 1);
-    roadPercent = (float)n / (float)65536.0;
-
-    policePercent =
-        (float)(*(Quad*)(miscHist + 58)) /
-        (float)65536.0;   /* and 59 */
-    firePercent =
-        (float)(*(Quad*)(miscHist + 60)) /
-        (float)65536.0;   /* and 61 */
-    roadPercent =
-        (float)(*(Quad*)(miscHist + 62)) /
-        (float)65536.0;   /* and 63 */
+    /* BOX: upstream then read these a second time, raw, without putting
+     * the words in order.  It made no difference: initFundingLevel(), below,
+     * sets all three to full funding on every load, as upstream does. */
+    policePercent = (float)get_long(miscHist + 58) / (float)65536.0;
+    firePercent = (float)get_long(miscHist + 60) / (float)65536.0;
+    roadPercent = (float)get_long(miscHist + 62) / (float)65536.0;
 
     cityTime = max((Quad)0, cityTime);
 
@@ -401,7 +372,6 @@ bool Micropolis::loadFile(const std::string &filename)
  */
 bool Micropolis::saveFile(const std::string &filename)
 {
-    long n;
     FILE *f;
 
     if ((f = fopen(filename.c_str(), "wb")) == NULL) {
@@ -410,18 +380,13 @@ bool Micropolis::saveFile(const std::string &filename)
     }
 
     /*
-     * Store 32-bit values back into miscHist as big-endian word pairs. We write
-     * the host-order Quad after HALF_SWAP_LONGS so the following save_short()
-     * byte swap emits the classic Mac/network-order file bytes.
+     * Store 32-bit values back into miscHist as big-endian word pairs: put_long
+     * writes the words in host order, and save_short()'s byte swap emits the
+     * classic Mac/network-order file bytes.
      */
 
-    n = totalFunds;
-    HALF_SWAP_LONGS(&n, 1);
-    (*(Quad *)(miscHist + 50)) = n;
-
-    n = cityTime;
-    HALF_SWAP_LONGS(&n, 1);
-    (*(Quad *)(miscHist + 8)) = n;
+    put_long(miscHist + 50, totalFunds);
+    put_long(miscHist + 8, cityTime);
 
     miscHist[52] = autoBulldoze;   // flag for autoBulldoze
     miscHist[53] = autoBudget;     // flag for autoBudget
@@ -430,17 +395,9 @@ bool Micropolis::saveFile(const std::string &filename)
     miscHist[57] = simSpeed;
     miscHist[56] = cityTax;        /* post release */
 
-    n = (int)(policePercent * 65536);
-    HALF_SWAP_LONGS(&n, 1);
-    (*(Quad *)(miscHist + 58)) = n;
-
-    n = (int)(firePercent * 65536);
-    HALF_SWAP_LONGS(&n, 1);
-    (*(Quad *)(miscHist + 60)) = n;
-
-    n = (int)(roadPercent * 65536);
-    HALF_SWAP_LONGS(&n, 1);
-    (*(Quad *)(miscHist + 62)) = n;
+    put_long(miscHist + 58, (Quad)(policePercent * 65536));
+    put_long(miscHist + 60, (Quad)(firePercent * 65536));
+    put_long(miscHist + 62, (Quad)(roadPercent * 65536));
 
     bool result =
         save_short(resHist, HISTORY_LENGTH / 2, f) &&
@@ -471,8 +428,8 @@ bool Micropolis::saveFile(const std::string &filename)
  */
 void Micropolis::loadScenario(Scenario s)
 {
-    std::string name = NULL;
-    std::string fname = NULL;
+    std::string name;     // BOX: was "= NULL", a std::string from a null pointer
+    std::string fname;
 
     cityFileName = "";
 

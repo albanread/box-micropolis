@@ -239,6 +239,8 @@ void Micropolis::setSmoke(const Position &pos, bool zonePower)
     static bool aniThis[8] = {  true, false, true, true, false, false, true, true };
     static short dx1[8]     = {   -1,    0,    1,    0,    0,    0,    0,    1 };
     static short dy1[8]     = {   -1,    0,   -1,   -1,    0,    0,   -1,   -1 };
+    static short dx2[8]     = {   -1,    0,    1,    1,    0,    0,    1,    1 };
+    static short dy2[8]     = {   -1,    0,    0,   -1,    0,    0,   -1,    0 };
     static short aniTabA[8] = {    0,    0,   32,   40,    0,    0,   48,   56 };
     static short aniTabB[8] = {    0,    0,   36,   44,    0,    0,   52,   60 };
     static short aniTabC[8] = { IND1,    0, IND2, IND4,    0,    0, IND6, IND8 };
@@ -253,35 +255,36 @@ void Micropolis::setSmoke(const Position &pos, bool zonePower)
     int z = (tile - IZB) >>3; /// @todo Why div 8? Industry is 9 tiles long!!
     z = z & 7;
 
-    if (aniThis[z]) {
-        int xx = pos.posX + dx1[z];
-        int yy = pos.posY + dy1[z];
-
-        if (testBounds(xx, yy)) {
-
-            if (zonePower) {
-
-                /// @todo Why do we assign the same map position twice?
-                /// @todo Add #SMOKEBASE into aniTabA and aniTabB tables?
-                if ((map[xx][yy] & LOMASK) == aniTabC[z]) {
-                    map[xx][yy] = ASCBIT | (SMOKEBASE + aniTabA[z]);
-                    map[xx][yy] = ASCBIT | (SMOKEBASE + aniTabB[z]);
-                }
-
-            } else {
-
-                /// @todo Why do we assign the same map position twice?
-                if ((map[xx][yy] & LOMASK) > aniTabC[z]) {
-                  map[xx][yy] = REGBIT | aniTabC[z];
-                  map[xx][yy] = REGBIT | aniTabD[z];
-                }
-
-            }
-
-        }
-
+    if (!aniThis[z]) {
+        return;
     }
 
+    // BOX: each chimney's smoke on its own cell.  The 2008 release (and the
+    // C original before it) declared the second chimney's place, dx2/dy2,
+    // and never used it: both smokes were written to the first cell, the
+    // second over the first, so a block with two chimneys smoked from one.
+    int xx = pos.posX + dx1[z];
+    int yy = pos.posY + dy1[z];
+    if (testBounds(xx, yy)) {
+        if (zonePower) {
+            if ((map[xx][yy] & LOMASK) == aniTabC[z]) {
+                map[xx][yy] = ASCBIT | (SMOKEBASE + aniTabA[z]);
+            }
+        } else if ((map[xx][yy] & LOMASK) > aniTabC[z]) {
+            map[xx][yy] = REGBIT | aniTabC[z];
+        }
+    }
+    xx = pos.posX + dx2[z];
+    yy = pos.posY + dy2[z];
+    if (testBounds(xx, yy)) {
+        if (zonePower) {
+            if ((map[xx][yy] & LOMASK) == aniTabD[z]) {
+                map[xx][yy] = ASCBIT | (SMOKEBASE + aniTabB[z]);
+            }
+        } else if ((map[xx][yy] & LOMASK) > aniTabD[z]) {
+            map[xx][yy] = REGBIT | aniTabD[z];
+        }
+    }
 }
 
 
@@ -300,11 +303,11 @@ void Micropolis::makeHospital(const Position &pos)
     if (needChurch > 0) {
         int churchType = getRandom(7); // 0 to 7 inclusive
         int tile;
-        if (churchType == 0) {
-            tile = CHURCH0;
-        } else {
-            tile = CHURCH1 + ((churchType - 1) * 9);
-        }
+        // BOX: the classic church always.  Churches 1 to 7 are upstream's
+        // later art, not in the 2008 release's tiles; the number is still
+        // drawn, so that every run takes the random numbers it did
+        (void)churchType;
+        tile = CHURCH0;
 
        //printf("NEW CHURCH tile %d x %d y %d type %d\n", tile, pos.posX, pos.posY, churchType);
 

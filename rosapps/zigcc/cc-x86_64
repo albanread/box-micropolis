@@ -1,0 +1,10 @@
+#!/bin/sh
+# zig 0.15 as a C compiler for x86_64 musl, for the C in an engine's
+# dependencies (aws-lc-sys, under PDFCraft's signatures): without the cc
+# crate's own --target, which zig does not take, and without zig's
+# sanitizers, whose run-time is not linked.  ZIG names zig, else ~/zig015.
+for a do
+  shift
+  case "$a" in --target=*) ;; *) set -- "$@" "$a" ;; esac
+done
+exec "${ZIG:-$HOME/zig015/zig}" cc -target x86_64-linux-musl -fno-sanitize=all "$@"

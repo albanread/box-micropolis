@@ -2040,6 +2040,15 @@ public:
 
     UQuad nextRandom;
 
+    /**
+     * BOX: when 0 or more, the seed every reseed uses instead of the clock
+     * (loading a city reseeds), so that a run can be repeated exactly.
+     */
+    int fixedRandomSeed;
+
+    /** BOX: repeatable runs from now on (-1: the clock again). */
+    void setFixedRandomSeed(int seed);
+
     int simRandom();
 
     short getRandom(short range);

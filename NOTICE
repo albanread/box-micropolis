@@ -1,0 +1,35 @@
+BOX Micropolis
+
+This is a MODIFIED VERSION of Micropolis.  The BOX's port changes and adds
+to Micropolis as published at https://github.com/SimHacker/MicropolisCore
+(commit 1e1e038).  The first commit of this repository holds the files taken
+from there unchanged; the second holds the BOX's changes.  Each change to
+the simulation is marked "BOX:" in the source.
+
+From Electronic Arts' notice (micropolis/MicropolisGPLLicenseNotice.md,
+which applies to all of it):
+
+  Micropolis, Unix Version. This game was released for the Unix platform in
+  or about 1990 and has been modified for inclusion in the One Laptop Per
+  Child program. Copyright (C) 1989 - 2007 Electronic Arts Inc.
+
+  No trademark or publicity rights are granted. This license does NOT give
+  you any right, title or interest in the trademark SimCity or any other
+  Electronic Arts trademark. You may not distribute any modification of this
+  program using the trademark SimCity or claim any affliation or association
+  with Electronic Arts Inc. or its employees.
+
+  You may not misrepresent the origins of this program; modified versions of
+  the program must be marked as such and not identified as the original
+  program.
+
+It is distributed under the GNU General Public License, version 3 or
+later, with those ADDITIONAL TERMS per GNU GPL Section 7: see
+micropolis/LICENSE, micropolis/gpl-3.0.txt and the notice.
+
+Micropolis is a registered trademark of Micropolis Corporation (Micropolis
+GmbH) and is licensed here as a courtesy of the owner under the Micropolis
+Public Name License (micropolis/MicropolisPublicNameLicense.md,
+https://www.micropolis.com).
+
+rosapps/micropolis-engine/src/cxxrt.cpp is under the MIT licence.
