@@ -27,8 +27,9 @@ at commit `1e1e038`**. This repository holds only what the port needs:
   - the licences.
 - **The second commit** is the BOX's changes and additions, described below.
 
-Upstream's other content (sounds, the web front end, the extra tile sets)
-is not here; it is at the commit above.
+Upstream's other content (the web front end, the extra tile sets, the
+sounds) is not here; it is at the commit above.  The BOX's game plays
+upstream's sounds (`content/sounds-wav`) unchanged.
 
 ## What the BOX changed
 
@@ -50,7 +51,7 @@ the source and listed in [micropolis/README.md](micropolis/README.md):
 | `micropolis/tools`, `micropolis/tests`, `micropolis/build.sh` | a headless driver and a regression test: 32 cities, a century each, compared byte for byte |
 | `micropolis/tiles-hd` | the generators for a redrawn tile set at 32, 64 and 128 pixels a tile, drawn by code in the original's layout and style (see its README and STYLE.md) |
 | `micropolis/content/images/tiles_hd64.png` | their 64-pixel result, which the game shows as Graphics HD |
-| `rosapps/micropolis-engine` | the program the BOX runs: Rust over the C++ simulation (`src/shim.cpp`). It talks to its RISC OS window over a socket (fd 3) and publishes the map, sprites and art for the GPU through shared memory (fd 4) |
+| `rosapps/micropolis-engine` | the program the BOX runs: Rust over the C++ simulation (`src/shim.cpp`). It talks to its RISC OS window over a socket (fd 3): the tools and what each costs and gives, the chosen square, the budget, evaluation, graphs, a map of the whole city with its overlays, the news and the sounds. It publishes the map, sprites, overlay colours and art for the GPU through shared memory (fd 4) |
 | `rosapps/zigcc` | the compiler wrappers it is built with for the BOX's Linux (zig 0.15, musl) |
 
 The rest of the BOX is not part of this repository: the RISC OS desktop

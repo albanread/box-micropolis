@@ -40,6 +40,7 @@ use std::os::unix::io::FromRawFd;
 use std::os::unix::net::UnixStream;
 use std::time::{Duration, Instant};
 
+mod game;
 mod variants;
 
 mod assets {
@@ -106,7 +107,7 @@ const PPMM_100: f64 = 3.54;
 // The tile map the presenter draws (rosgd/include/rosgd/tiles.h): its
 // block's layout, which this mirrors byte for byte
 const TL_MAGIC: u32 = 0x53454C54;
-const TL_VERSION: u32 = 2;
+const TL_VERSION: u32 = 3;
 const TL_MAP: usize = 128;
 const TL_SPRITES: usize = 256;
 const TL_CLASSES: usize = 1024;
@@ -114,7 +115,8 @@ const TL_SPR_W: usize = 512;
 const TL_SPR_H: usize = 512;
 const TL_AT_MAP: usize = 64;
 const TL_AT_SPRITE: usize = TL_AT_MAP + TL_MAP * TL_MAP * 2;
-const TL_AT_CLS: usize = TL_AT_SPRITE + TL_SPRITES * 16;
+const TL_AT_OVL: usize = TL_AT_SPRITE + TL_SPRITES * 16;
+const TL_AT_CLS: usize = TL_AT_OVL + TL_MAP * TL_MAP * 4;
 const TL_AT_SPR: usize = TL_AT_CLS + TL_CLASSES * 4;
 const TL_AT_ATLAS: usize = TL_AT_SPR + TL_SPR_W * TL_SPR_H * 4;
 /// the whole block for an atlas of W x H: the picture, then its materials
@@ -126,6 +128,7 @@ const TL_AT_ATLAS_W: usize = 48;
 const TL_AT_QUALITY: usize = 52;
 const TL_AT_DAYLIGHT: usize = 53;
 const TL_AT_RATE: usize = 54;
+const TL_AT_OVERLAY: usize = 55;
 /// the presenter's drawings (tiles.h's ROS_TILES_Q_*), as the properties name them
 const QUALITIES: [&str; 4] = ["Classic", "Smooth", "Enhanced", "HD"];
 const Q_RICH: u8 = 2;                           // tiles.h's ROS_TILES_Q_RICH
@@ -401,6 +404,8 @@ struct Engine {
     pub_map: Vec<u16>,                          // the map as last put in the block
     pub_sprites: Vec<Sprite>,
     pub_foot: Option<Option<(i32, i32, i32)>>,
+    pub_ovl: Option<bool>,                      // the overlay in the block: shown or not
+    ui: game::Ui,
 }
 
 impl Engine {
@@ -597,7 +602,10 @@ impl Engine {
             return;
         }
         match unsafe { mp_tool(self.city, tool, tx, ty) } {
-            1 if tool != TOOL_QUERY => self.touched(),      // a look changes nothing
+            1 if tool != TOOL_QUERY => {
+                self.touched();
+                self.tool_sound(self.tool);
+            }
             -2 => self.set_news("There is not enough money for that."),
             -1 => self.set_news("The ground must be bulldozed first."),
             _ => {}
@@ -636,6 +644,8 @@ impl Engine {
     fn set_tool(&mut self, name: &str) {
         if let Some(i) = TOOLS.iter().position(|t| t.0 == name) {
             self.tool = i;
+            self.ui.page = 0;                   // the pane says what the tool is
+            self.panes();
         }
     }
 
@@ -654,6 +664,8 @@ impl Engine {
                     if i >= 1 && i <= self.messages.len() {
                         let m = self.messages[i - 1].clone();
                         self.set_news(&m);
+                        let at = if ev.b >= 0 && ev.c >= 0 { Some((ev.b, ev.c)) } else { None };
+                        self.news_add(&m, at);
                     }
                     // a disaster's or an important event's place: the view
                     // goes there, as the original's auto-goto did
@@ -678,15 +690,38 @@ impl Engine {
                         st(ev.b), st(ev.c), st(ev.d), st(ev.e), st(ev.f)
                     );
                     self.set_news(&text);
+                    let cap = |t: String| {
+                        let mut c = t.chars();
+                        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+                    };
+                    let rows = vec![
+                        ("Population".to_string(), cap(st(ev.b))),
+                        ("Land value".to_string(), cap(st(ev.c))),
+                        ("Crime".to_string(), cap(st(ev.d))),
+                        ("Pollution".to_string(), cap(st(ev.e))),
+                        ("Growth".to_string(), cap(st(ev.f))),
+                    ];
+                    self.select(ev.g, ev.h, what, rows);
                 }
                 EV_GOTO => {
                     if self.follow {
                         self.go_to(ev.a, ev.b);
                     }
                 }
-                EV_BUDGET => self.set_news("The budget is due: set the tax rate and funding in the properties."),
-                EV_WIN => self.say_text("note", "You have won the scenario: the city is a success."),
-                EV_LOSE => self.say_text("note", "You have lost the scenario: the city has failed."),
+                EV_BUDGET => self.budget_due(),
+                EV_WIN => {
+                    self.news_add("The scenario is won.", None);
+                    self.say_text("note", "You have won the scenario: the city is a success.");
+                }
+                EV_LOSE => {
+                    self.news_add("The scenario is lost.", None);
+                    self.say_text("note", "You have lost the scenario: the city has failed.");
+                }
+                game::EV_SOUND => {
+                    let t = unsafe { CStr::from_ptr(ev.text.as_ptr()) }.to_string_lossy().into_owned();
+                    let name = t.split_whitespace().nth(1).unwrap_or("").to_string();
+                    self.sound(&name);
+                }
                 _ => {}
             }
         }
@@ -697,148 +732,6 @@ impl Engine {
         let k = self.scale() * TILE as f64;
         let (cx, cy) = (((x as f64 + 0.5) * k) as i64, ((y as f64 + 0.5) * k) as i64);
         self.say(format!("centre {cx} {cy}"));
-    }
-
-    fn panes(&mut self) {
-        let s = self.status();
-        let money = |v: i64| {
-            let t = v.abs().to_string();
-            let mut o = String::new();
-            for (i, c) in t.chars().enumerate() {
-                if i > 0 && (t.len() - i) % 3 == 0 {
-                    o.push(',');
-                }
-                o.push(c);
-            }
-            if v < 0 { format!("-${o}") } else { format!("${o}") }
-        };
-        let demand = |d: f32| {
-            if d > 0.5 { "Strong" } else if d > 0.1 { "Some" } else if d < -0.5 { "Falling" } else if d < -0.1 { "Weak" } else { "Steady" }
-        };
-        let pct = |v: f32| format!("{}%", (v * 100.0).round() as i32);
-        let fund_menu = "0%,25%,50%,75%,100%";
-        let mut rows = vec![
-            "#City".to_string(),
-            format!("Population:{}", money(s.pop as i64).trim_start_matches('$')),
-            format!("Funds:{}", money(s.funds as i64)),
-            format!("Score:{}", s.score),
-            format!("Class:{}", CLASSES.get(s.city_class as usize).copied().unwrap_or("")),
-            "#Demand".into(),
-            format!("Residential:{}", demand(s.res_demand)),
-            format!("Commercial:{}", demand(s.com_demand)),
-            format!("Industrial:{}", demand(s.ind_demand)),
-            "#Budget".into(),
-            format!("Tax rate?{}%?{}", s.tax, (0..=20).map(|t| format!("{t}%")).collect::<Vec<_>>().join(",")),
-            format!("Roads?{}?{fund_menu}", pct(s.road_percent)),
-            format!("Fire?{}?{fund_menu}", pct(s.fire_percent)),
-            format!("Police?{}?{fund_menu}", pct(s.police_percent)),
-            format!("Auto budget!{}", if s.auto_budget != 0 { "on" } else { "off" }),
-            "#Game".into(),
-            format!("Speed?{}?{}", SPEEDS[self.speed], SPEEDS.join(",")),
-            format!("Level?{}?{}", LEVELS.get(s.level as usize).copied().unwrap_or("Easy"), LEVELS.join(",")),
-            format!("Disasters!{}", if s.disasters != 0 { "on" } else { "off" }),
-            format!("Go to events!{}", if self.follow { "on" } else { "off" }),
-            "#View".into(),
-            format!(
-                "Graphics?{}?{}",
-                QUALITIES[self.quality as usize],
-                QUALITIES[..if self.fine.is_some() { 4 } else { 3 }].join(",")
-            ),
-            format!("Night!{}", if self.night { "on" } else { "off" }),
-        ];
-        rows.retain(|r| !r.is_empty());
-        let line = rows.join("|");
-        if line != self.told_props {
-            self.told_props = line.clone();
-            self.say_text("props", &line);
-        }
-        // the status bar: the date and the funds on the left, the
-        // population and the city's news across the rest
-        let inspect = format!(
-            "{} {}|{}|Population {}   score {}|{}",
-            MONTHS.get(s.month as usize).copied().unwrap_or(""),
-            s.year,
-            money(s.funds as i64),
-            money(s.pop as i64).trim_start_matches('$'),
-            s.score,
-            self.news
-        );
-        if inspect != self.told_inspect {
-            self.told_inspect = inspect.clone();
-            self.say_text("inspect", &inspect);
-        }
-        // the View menu's ticks: the drawing chosen, HD greyed without its
-        // tiles, and Night
-        let ticks: Vec<u8> = (0..4u8)
-            .map(|q| if q == self.quality { 1 } else if q == Q_HD && self.fine.is_none() { 2 } else { 0 })
-            .chain(std::iter::once(self.night as u8))
-            .collect();
-        if ticks != self.told_ticks {
-            for (i, t) in ticks.iter().enumerate() {
-                self.say(format!("tick 2 {i} {t}"));
-            }
-            self.told_ticks = ticks;
-        }
-    }
-
-    fn prop(&mut self, rest: &str) {
-        let (name, value) = rest.split_once(' ').unwrap_or((rest, ""));
-        let value = value.trim();
-        let percent = || value.trim_end_matches('%').parse::<f32>().ok().map(|v| v / 100.0);
-        let s = self.status();
-        match name {
-            "Tax" => {} // "Tax rate": two words, below
-            "Roads" => {
-                if let Some(v) = percent() {
-                    unsafe { mp_set_funding(self.city, v, s.fire_percent, s.police_percent) }
-                }
-            }
-            "Fire" => {
-                if let Some(v) = percent() {
-                    unsafe { mp_set_funding(self.city, s.road_percent, v, s.police_percent) }
-                }
-            }
-            "Police" => {
-                if let Some(v) = percent() {
-                    unsafe { mp_set_funding(self.city, s.road_percent, s.fire_percent, v) }
-                }
-            }
-            "Speed" => {
-                if let Some(i) = SPEEDS.iter().position(|x| *x == value) {
-                    self.set_speed(i);
-                }
-            }
-            "Level" => {
-                if let Some(i) = LEVELS.iter().position(|x| *x == value) {
-                    unsafe { mp_set_level(self.city, i as c_int) };
-                }
-            }
-            "Disasters" => unsafe { mp_set_disasters(self.city, (s.disasters == 0) as c_int) },
-            _ => {}
-        }
-        if let Some(v) = rest.strip_prefix("Tax rate ") {
-            if let Ok(t) = v.trim().trim_end_matches('%').parse::<c_int>() {
-                unsafe { mp_set_tax(self.city, t.clamp(0, 20)) };
-            }
-        }
-        if let Some(v) = rest.strip_prefix("Graphics ") {
-            if let Some(i) = QUALITIES.iter().position(|x| *x == v.trim()) {
-                if i as u8 != Q_HD || self.fine.is_some() {
-                    self.quality = i as u8;
-                }
-            }
-        }
-        if rest.starts_with("Night") {
-            self.night = !self.night;
-        }
-        if rest.starts_with("Go to events") {
-            self.follow = !self.follow;
-            unsafe { mp_set_auto_goto(self.city, self.follow as c_int) };
-        }
-        if rest.starts_with("Auto budget") {
-            unsafe { mp_set_auto_budget(self.city, (s.auto_budget == 0) as c_int) };
-        }
-        self.panes();
     }
 
     fn menu(&mut self, menu: i64, item: i64) {
@@ -874,6 +767,11 @@ impl Engine {
 
     /// the footprint of the tool under the pointer: left, top, size
     fn footprint(&self) -> Option<(i32, i32, i32)> {
+        if TOOLS[self.tool].1 == TOOL_QUERY {
+            // the query tool: the square chosen, its whole building framed
+            let sel = self.ui.sel.as_ref()?;
+            return Some(self.footprint_at(sel.x, sel.y));
+        }
         let (tx, ty) = self.hover?;
         let tool = TOOLS[self.tool].1;
         if tool < 0 {
@@ -1020,6 +918,7 @@ impl Engine {
         self.pub_map.fill(0xffff);
         self.pub_sprites.clear();
         self.pub_foot = None;
+        self.pub_ovl = None;
         self.waiting = false;
         self.sx = 0.0;                          // the pointer's places include the scroll
         self.sy = 0.0;
@@ -1170,6 +1069,22 @@ impl Engine {
                 *base.add(TL_AT_RATE) = 20;
             }
             self.pub_look = look;
+            changed = true;
+        }
+        // the overlay: its colours a square at a time, when they change
+        let fresh_ovl = self.overlay_colours();
+        let show_ovl = self.ui.overlay > 0 && self.ui.overlay_on_city;
+        if show_ovl && (fresh_ovl || self.pub_ovl != Some(true)) {
+            for y in 0..WORLD_H {
+                for x in 0..WORLD_W {
+                    put32(TL_AT_OVL + (y * TL_MAP + x) * 4, self.ui.ovl[y * WORLD_W + x]);
+                }
+            }
+            changed = true;
+        }
+        if self.pub_ovl != Some(show_ovl) {
+            unsafe { *base.add(TL_AT_OVERLAY) = show_ovl as u8 };
+            self.pub_ovl = Some(show_ovl);
             changed = true;
         }
         // the tool's footprint, a frame round the squares it would cover
@@ -1331,6 +1246,7 @@ fn main() {
     let sock = unsafe { UnixStream::from_raw_fd(3) };
     let out = sock.try_clone().expect("the socket");
     let tiles = decode(assets::TILES).expect("tiles.png");
+    let ui = game::Ui::new(&tiles);
     let sprites = assets::SPRITES.iter().filter_map(|(t, f, b)| decode(b).map(|i| (*t, *f, i))).collect();
     let messages = assets::MESSAGES.lines().map(|l| l.trim().to_string()).collect();
     let workdir = std::env::temp_dir().join(format!("micropolis-{}", std::process::id()));
@@ -1378,6 +1294,8 @@ fn main() {
         pub_map: vec![0xffff; TL_MAP * TL_MAP],
         pub_sprites: Vec::new(),
         pub_foot: None,
+        pub_ovl: None,
+        ui,
     };
     e.say("hello micropolis 0.1 micropolis-engine".into());
 
@@ -1428,6 +1346,22 @@ fn main() {
                     "tool" => e.set_tool(rest.trim()),
                     "menu" if nums.len() == 2 => e.menu(nums[0] as i64, nums[1] as i64),
                     "prop" => e.prop(rest),
+                    "pick" => {
+                        let mut w = rest.split_whitespace();
+                        let name = w.next().unwrap_or("").to_string();
+                        let fx = w.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                        let fy = w.next().and_then(|v| v.parse().ok()).unwrap_or(0.0);
+                        e.pick(&name, fx, fy);
+                    }
+                    "hover" => e.hover_tool(rest.trim()),
+                    // where the pane's pictures are written, and their names' start
+                    "scrap" => {
+                        let (p, n) = rest.trim().split_once(' ').unwrap_or((rest.trim(), "t"));
+                        e.ui.thumb_path = p.to_string();
+                        e.ui.thumb_prefix = n.to_string();
+                        e.told_props.clear();
+                        e.panes();
+                    }
                     "key" if !nums.is_empty() => e.key(at(0) as u32),
                     "shown" => e.waiting = false,
                     "quit" => break 'run,

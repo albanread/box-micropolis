@@ -46,6 +46,26 @@ struct MpSprite {
     int type, frame, x, y, width, height, xOffset, yOffset;
 };
 
+/* the evaluation, as the original's Evaluation window shows it */
+struct MpEval {
+    int yes;                        /* percent who think the mayor does a good job */
+    int problem[4], votes[4];       /* the worst problems (CVP_*, or -1) and their percents */
+    int pop, popDelta, assessed, cityClass, score, scoreDelta;
+    int crimeAverage, pollutionAverage, trafficAverage, landValueAverage;
+};
+
+/* the year's budget, as the original's Budget window shows it */
+struct MpBudget {
+    int taxFund, roadFund, fireFund, policeFund;        /* collected; requested */
+    int roadSpend, fireSpend, policeSpend;              /* paid */
+    int cashFlow, funds;
+};
+
+/* a scenario's clock */
+struct MpScenario {
+    int scenario, scoreWait, disasterWait, cityTime;
+};
+
 }
 
 namespace {
@@ -200,6 +220,95 @@ void mp_set_funding(void *c, float road, float fire, float police)
 }
 
 void mp_set_auto_budget(void *c, int on) { M(c).setAutoBudget(on != 0); }
+void mp_set_auto_bulldoze(void *c, int on) { M(c).setAutoBulldoze(on != 0); }
+int mp_auto_bulldoze(void *c) { return M(c).autoBulldoze; }
+
+void mp_eval(void *c, MpEval *e)
+{
+    Micropolis &m = M(c);
+    memset(e, 0, sizeof *e);
+    e->yes = m.cityYes;
+    for (int i = 0; i < 4; i++) {
+        int p = m.problemOrder[i];
+        e->problem[i] = p < CVP_NUMPROBLEMS ? p : -1;
+        e->votes[i] = p < CVP_NUMPROBLEMS ? m.problemVotes[p] : 0;
+    }
+    e->pop = m.cityPop;
+    e->popDelta = m.cityPopDelta;
+    e->assessed = m.cityAssessedValue;
+    e->cityClass = m.cityClass;
+    e->score = m.cityScore;
+    e->scoreDelta = m.cityScoreDelta;
+    e->crimeAverage = m.crimeAverage;
+    e->pollutionAverage = m.pollutionAverage;
+    e->trafficAverage = m.trafficAverage;
+    e->landValueAverage = m.landValueAverage;
+}
+
+void mp_budget(void *c, MpBudget *b)
+{
+    Micropolis &m = M(c);
+    memset(b, 0, sizeof *b);
+    b->taxFund = m.taxFund;
+    b->roadFund = m.roadFund;
+    b->fireFund = m.fireFund;
+    b->policeFund = m.policeFund;
+    b->roadSpend = m.roadSpend;
+    b->fireSpend = m.fireSpend;
+    b->policeSpend = m.policeSpend;
+    b->cashFlow = m.cashFlow;
+    b->funds = m.totalFunds;
+}
+
+void mp_scenario_clock(void *c, MpScenario *s)
+{
+    Micropolis &m = M(c);
+    s->scenario = m.scenario;
+    s->scoreWait = m.scoreWait;
+    s->disasterWait = m.disasterWait;
+    s->cityTime = m.cityTime;
+}
+
+/* a history (HISTORY_TYPE_*) at a scale (0: ten years, 1: 120), newest
+ * first, into OUT[120] */
+void mp_history(void *c, int type, int scale, short *out)
+{
+    Micropolis &m = M(c);
+    for (int i = 0; i < 120; i++) {
+        out[i] = m.getHistory(type, scale, i);
+    }
+}
+
+/* an overlay's value at every square, row by row, into OUT[120 * 100]:
+ * 1 population, 2 growth, 3 land value, 4 crime, 5 pollution, 6 traffic,
+ * 7 power (1 powered, 2 a conductor or zone without it, 0 neither),
+ * 8 fire cover, 9 police cover */
+void mp_overlay(void *c, int kind, short *out)
+{
+    Micropolis &m = M(c);
+    for (int y = 0; y < WORLD_H; y++) {
+        for (int x = 0; x < WORLD_W; x++) {
+            short v = 0;
+            switch (kind) {
+            case 1: v = m.populationDensityMap.worldGet(x, y); break;
+            case 2: v = m.rateOfGrowthMap.worldGet(x, y); break;
+            case 3: v = m.landValueMap.worldGet(x, y); break;
+            case 4: v = m.crimeRateMap.worldGet(x, y); break;
+            case 5: v = m.pollutionDensityMap.worldGet(x, y); break;
+            case 6: v = m.trafficDensityMap.worldGet(x, y); break;
+            case 7: {
+                MapValue t = m.map[x][y];
+                v = (t & CONDBIT) ? ((t & PWRBIT) ? 1 : 2) : 0;
+                break;
+            }
+            case 8: v = m.fireStationEffectMap.worldGet(x, y); break;
+            case 9: v = m.policeStationEffectMap.worldGet(x, y); break;
+            default: break;
+            }
+            out[y * WORLD_W + x] = v;
+        }
+    }
+}
 void mp_set_disasters(void *c, int on) { M(c).setEnableDisasters(on != 0); }
 void mp_set_auto_goto(void *c, int on) { M(c).setAutoGoto(on != 0); }
 void mp_set_level(void *c, int level) { M(c).setGameLevel((GameLevel)level); }
